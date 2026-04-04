@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "442036078735",
+    "project_id": "carvo-eb283",
+    "storage_bucket": "carvo-eb283.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:442036078735:android:88bbd03d7a6559414148fa",
+        "android_client_info": {
+          "package_name": "com.example.cravo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmNLeSVsZrAC9WljPatWFt036gFSsnnIM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
