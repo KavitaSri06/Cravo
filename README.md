@@ -186,7 +186,11 @@ This repository currently represents the completed MVP baseline for:
 - Enhanced analytics for vendors.
 - Admin tooling and moderation workflows.
 
+## Contributing
+
+Contributions welcome! Fork, branch, PR.
+
 ## License
 
-This project is private/internal unless a LICENSE file is added and published.
+MIT License. See [LICENSE](LICENSE) for details.
 

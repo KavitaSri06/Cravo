@@ -6,9 +6,7 @@ import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const CravoApp());
 }
 
@@ -37,9 +35,9 @@ class _CravoAppState extends State<CravoApp> {
           secondary: const Color(0xFF4DA3FF),
         ),
         textTheme: ThemeData.dark().textTheme.apply(
-              bodyColor: Colors.white,
-              displayColor: Colors.white,
-            ),
+          bodyColor: Colors.white,
+          displayColor: Colors.white,
+        ),
       ),
     );
   }
