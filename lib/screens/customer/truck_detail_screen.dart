@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,102 +9,115 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 class TruckDetailScreen extends StatefulWidget {
-  const TruckDetailScreen({super.key, required this.vendorId});
-
   final String vendorId;
+  const TruckDetailScreen({super.key, required this.vendorId});
 
   @override
   State<TruckDetailScreen> createState() => _TruckDetailScreenState();
 }
 
-class _TruckDetailScreenState extends State<TruckDetailScreen> {
-  final Map<String, _CartLine> _cart = <String, _CartLine>{};
-
-  Position? _currentPosition;
+class _TruckDetailScreenState extends State<TruckDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final Map<String, _CartLine> _cart = {};
   bool _placingOrder = false;
+  Position? _currentPosition;
 
   static const _bg = Color(0xFF0A0F1E);
   static const _card = Color(0xFF111827);
-  static const _primary = Color(0xFF1A56A0);
   static const _accent = Color(0xFF4DA3FF);
+  static const _primary = Color(0xFF1A56A0);
   static const _subtle = Color(0xFFA4ACBE);
-
-  int get _cartCount =>
-      _cart.values.fold<int>(0, (totalQty, item) => totalQty + item.quantity);
-
-  double get _cartTotal => _cart.values.fold<double>(
-    0,
-    (runningTotal, item) => runningTotal + (item.quantity * item.price),
-  );
 
   @override
   void initState() {
     super.initState();
-    _prepareLocation();
+    _tabController = TabController(length: 2, vsync: this);
+    _determinePosition();
   }
 
-  Future<void> _prepareLocation() async {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _determinePosition() async {
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-
       if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+          permission == LocationPermission.deniedForever)
         return;
-      }
 
-      final position = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
-      setState(() => _currentPosition = position);
-    } catch (_) {}
-  }
-
-  String _distanceLabel(GeoPoint? truckLocation) {
-    final user = _currentPosition;
-    if (user == null || truckLocation == null) return '--';
-
-    final meters = Geolocator.distanceBetween(
-      user.latitude,
-      user.longitude,
-      truckLocation.latitude,
-      truckLocation.longitude,
-    );
-
-    if (meters < 1000) {
-      return '${meters.toStringAsFixed(0)} m';
+      final position = await Geolocator.getCurrentPosition(
+        timeLimit: const Duration(seconds: 6),
+      );
+      if (mounted) setState(() => _currentPosition = position);
+    } on TimeoutException {
+      // Continue without distance badge if device location is slow.
+    } catch (_) {
+      // Continue without distance badge on any location failure.
     }
-
-    return '${(meters / 1000).toStringAsFixed(1)} km';
   }
 
   void _addToCart(String itemId, String name, double price) {
     setState(() {
-      final existing = _cart[itemId];
-      if (existing == null) {
+      if (_cart.containsKey(itemId)) {
+        final existing = _cart[itemId]!;
+        _cart[itemId] = existing.copyWith(quantity: existing.quantity + 1);
+      } else {
         _cart[itemId] = _CartLine(
           itemId: itemId,
           name: name,
           price: price,
           quantity: 1,
         );
-      } else {
-        _cart[itemId] = existing.copyWith(quantity: existing.quantity + 1);
       }
     });
   }
 
   void _removeFromCart(String itemId) {
     setState(() {
-      final existing = _cart[itemId];
-      if (existing == null) return;
+      if (!_cart.containsKey(itemId)) return;
+      final existing = _cart[itemId]!;
       if (existing.quantity <= 1) {
         _cart.remove(itemId);
       } else {
         _cart[itemId] = existing.copyWith(quantity: existing.quantity - 1);
       }
     });
+  }
+
+  double get _cartTotal {
+    if (_cart.isEmpty) return 0;
+    return _cart.values
+        .map((line) => line.price * line.quantity)
+        .reduce((a, b) => a + b);
+  }
+
+  int get _cartCount {
+    if (_cart.isEmpty) return 0;
+    return _cart.values.map((line) => line.quantity).reduce((a, b) => a + b);
+  }
+
+  String _distanceLabel(GeoPoint? point) {
+    final user = _currentPosition;
+    if (user == null || point == null) return '--';
+    final meters = Geolocator.distanceBetween(
+      user.latitude,
+      user.longitude,
+      point.latitude,
+      point.longitude,
+    );
+    return meters < 1000
+        ? '${meters.toStringAsFixed(0)} m'
+        : '${(meters / 1000).toStringAsFixed(1)} km';
   }
 
   Future<void> _placeOrder() async {
@@ -131,9 +146,8 @@ class _TruckDetailScreenState extends State<TruckDetailScreen> {
           .collection('users')
           .doc(user.uid)
           .get();
-      final userData = userDoc.data() ?? {};
       final customerName =
-          (userData['fullName'] ?? user.displayName ?? 'Cravo Customer')
+          (userDoc.data()?['fullName'] ?? user.displayName ?? 'Cravo Customer')
               .toString();
 
       final items = _cart.values
@@ -148,7 +162,6 @@ class _TruckDetailScreenState extends State<TruckDetailScreen> {
           )
           .toList();
 
-      final total = _cartTotal;
       final orderRef = await FirebaseFirestore.instance
           .collection('orders')
           .add({
@@ -158,268 +171,267 @@ class _TruckDetailScreenState extends State<TruckDetailScreen> {
             'customerName': customerName,
             'status': 'placed',
             'items': items,
-            'totalAmount': total,
+            'totalAmount': _cartTotal,
             'createdAt': FieldValue.serverTimestamp(),
             'placedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
           });
 
       if (!mounted) return;
       setState(() => _cart.clear());
-      context.pushReplacement('/order-status/${orderRef.id}');
-    } catch (_) {
+      context.go('/order-status/${orderRef.id}');
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to place order right now.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to place order: $e')));
     } finally {
-      if (mounted) {
-        setState(() => _placingOrder = false);
-      }
+      if (mounted) setState(() => _placingOrder = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final vendorStream = FirebaseFirestore.instance
-        .collection('vendors')
-        .doc(widget.vendorId)
-        .snapshots();
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: _bg,
-        appBar: AppBar(
-          backgroundColor: _bg,
-          title: const Text('Truck Details'),
-        ),
-        body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: vendorStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Center(
-                child: Text(
-                  'Unable to load truck details.',
-                  style: TextStyle(color: Colors.white),
-                ),
-              );
-            }
-
-            if (snapshot.connectionState == ConnectionState.waiting ||
-                !snapshot.hasData) {
-              return const Center(
-                child: CircularProgressIndicator(color: _accent),
-              );
-            }
-
-            final data = snapshot.data!.data();
-            if (data == null) {
-              return const Center(
-                child: Text(
-                  'Truck not found.',
-                  style: TextStyle(color: Colors.white),
-                ),
-              );
-            }
-
-            final truckName = (data['businessName'] ?? 'Food Truck').toString();
-            final cuisine = (data['cuisineType'] ?? 'Street Food').toString();
-            final rating = (data['rating'] as num?)?.toDouble() ?? 4.5;
-            final isLive = (data['isLive'] as bool?) ?? false;
-            final ownerName = (data['ownerName'] ?? 'Owner').toString();
-            final location = data['location'] as GeoPoint?;
-            final latLng = location == null
-                ? LatLng(13.0827, 80.2707)
-                : LatLng(location.latitude, location.longitude);
-
-            return Column(
-              children: [
-                Container(
-                  margin: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _card,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFF26344B)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              truckName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isLive
-                                  ? const Color(0xFF10361F)
-                                  : const Color(0xFF3A4250),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              isLive ? 'LIVE' : 'OFFLINE',
-                              style: TextStyle(
-                                color: isLive ? Colors.greenAccent : _subtle,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        cuisine,
-                        style: const TextStyle(color: _subtle, fontSize: 14),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Colors.amber,
-                            size: 17,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            rating.toStringAsFixed(1),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(width: 16),
-                          const Icon(
-                            Icons.place_outlined,
-                            color: _subtle,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _distanceLabel(location),
-                            style: const TextStyle(color: _subtle),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: _card,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const TabBar(
-                    indicatorColor: _accent,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: _subtle,
-                    tabs: [
-                      Tab(text: 'Menu'),
-                      Tab(text: 'Info'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _MenuTab(
-                        vendorId: widget.vendorId,
-                        onAdd: _addToCart,
-                        onRemove: _removeFromCart,
-                        cart: _cart,
-                      ),
-                      _InfoTab(
-                        ownerName: ownerName,
-                        cuisine: cuisine,
-                        rating: rating,
-                        distanceLabel: _distanceLabel(location),
-                        latLng: latLng,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(backgroundColor: _bg, title: const Text('Truck Details')),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('vendors')
+            .doc(widget.vendorId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text(
+                'Unable to load truck details.',
+                style: TextStyle(color: Colors.white),
+              ),
             );
-          },
-        ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-            decoration: const BoxDecoration(
-              color: _card,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x3A000000),
-                  blurRadius: 14,
-                  offset: Offset(0, -6),
+          }
+          if (snapshot.connectionState == ConnectionState.waiting ||
+              !snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(color: _accent),
+            );
+          }
+
+          final data = snapshot.data!.data();
+          if (data == null) {
+            return const Center(
+              child: Text(
+                'Truck not found.',
+                style: TextStyle(color: Colors.white),
+              ),
+            );
+          }
+
+          final truckName = (data['businessName'] ?? 'Food Truck').toString();
+          final cuisine = (data['cuisineType'] ?? 'Street Food').toString();
+          final rating = (data['rating'] as num?)?.toDouble() ?? 4.5;
+          final isLive = (data['isLive'] as bool?) ?? false;
+          final ownerName = (data['ownerName'] ?? 'Owner').toString();
+          final location = data['location'] as GeoPoint?;
+          final latLng = location == null
+              ? const LatLng(13.0827, 80.2707)
+              : LatLng(location.latitude, location.longitude);
+
+          return Column(
+            children: [
+              // Header card
+              Container(
+                margin: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _card,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFF26344B)),
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$_cartCount items',
-                        style: const TextStyle(color: _subtle, fontSize: 12),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Rs ${_cartTotal.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            truckName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isLive
+                                ? const Color(0xFF10361F)
+                                : const Color(0xFF3A4250),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            isLive ? 'LIVE' : 'OFFLINE',
+                            style: TextStyle(
+                              color: isLive ? Colors.greenAccent : _subtle,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      cuisine,
+                      style: const TextStyle(color: _subtle, fontSize: 14),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Colors.amber,
+                          size: 17,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        const SizedBox(width: 16),
+                        const Icon(
+                          Icons.place_outlined,
+                          color: _subtle,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _distanceLabel(location),
+                          style: const TextStyle(color: _subtle),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: _cartTotal > 0 && !_placingOrder
-                        ? _placeOrder
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _primary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFF2A3142),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+              ),
+
+              // TabBar
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: _card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: _accent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: _subtle,
+                  tabs: const [
+                    Tab(text: 'Menu'),
+                    Tab(text: 'Info'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Tab content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _MenuTab(
+                      vendorId: widget.vendorId,
+                      onAdd: _addToCart,
+                      onRemove: _removeFromCart,
+                      cart: _cart,
+                    ),
+                    _InfoTab(
+                      ownerName: ownerName,
+                      cuisine: cuisine,
+                      rating: rating,
+                      distanceLabel: _distanceLabel(location),
+                      latLng: latLng,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+
+      // Bottom cart bar
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          decoration: const BoxDecoration(
+            color: _card,
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x3A000000),
+                blurRadius: 14,
+                offset: Offset(0, -6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$_cartCount items',
+                      style: const TextStyle(color: _subtle, fontSize: 12),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Rs ${_cartTotal.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
                       ),
                     ),
-                    child: _placingOrder
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Place Order'),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _cartTotal > 0 && !_placingOrder
+                      ? _placeOrder
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF2A3142),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _placingOrder
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Place Order'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -446,15 +458,12 @@ class _MenuTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stream = FirebaseFirestore.instance
-        .collection('menus')
-        .doc(vendorId)
-        .collection('items')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
-
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
+      stream: FirebaseFirestore.instance
+          .collection('menus')
+          .doc(vendorId)
+          .collection('items')
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Center(
@@ -464,12 +473,18 @@ class _MenuTab extends StatelessWidget {
             ),
           );
         }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: _accent));
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = (snapshot.data?.docs ?? []).where((doc) {
+          final data = doc.data();
+          final isAvailable =
+              (data['isAvailable'] as bool?) ??
+              (data['available'] as bool?) ??
+              true;
+          return isAvailable;
+        }).toList();
         if (docs.isEmpty) {
           return const Center(
             child: Text(
@@ -485,8 +500,6 @@ class _MenuTab extends StatelessWidget {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final data = doc.data();
-
-            final available = (data['available'] as bool?) ?? true;
             final name = (data['name'] ?? 'Menu Item').toString();
             final desc = (data['description'] ?? 'Freshly prepared').toString();
             final price = (data['price'] as num?)?.toDouble() ?? 0;
@@ -503,34 +516,13 @@ class _MenuTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      if (!available)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF3B4352),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'Unavailable',
-                            style: TextStyle(color: _subtle, fontSize: 11),
-                          ),
-                        ),
-                    ],
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 5),
                   Text(
@@ -556,7 +548,7 @@ class _MenuTab extends StatelessWidget {
                           children: [
                             _QtyButton(
                               icon: Icons.remove,
-                              onTap: available ? () => onRemove(doc.id) : null,
+                              onTap: () => onRemove(doc.id),
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(
@@ -574,9 +566,7 @@ class _MenuTab extends StatelessWidget {
                         ),
                       _QtyButton(
                         icon: Icons.add,
-                        onTap: available
-                            ? () => onAdd(doc.id, name, price)
-                            : null,
+                        onTap: () => onAdd(doc.id, name, price),
                       ),
                     ],
                   ),

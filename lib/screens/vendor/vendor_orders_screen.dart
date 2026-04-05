@@ -23,6 +23,19 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen>
   static const _accent = Color(0xFF4DA3FF);
   static const _subtle = Color(0xFFA4ACBE);
 
+  String _friendlyError(Object error) {
+    if (error is FirebaseException) {
+      if (error.code == 'permission-denied') {
+        return 'Access denied by Firestore rules. Publish updated rules and try again.';
+      }
+      if (error.code == 'failed-precondition') {
+        return 'Firestore index required. Create the index from Firebase Console.';
+      }
+      return 'Firestore error: ${error.code}';
+    }
+    return 'Unable to load orders.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -121,7 +134,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen>
     final stream = FirebaseFirestore.instance
         .collection('orders')
         .where('vendorId', isEqualTo: _vendorId)
-        .orderBy('createdAt', descending: true)
         .snapshots();
 
     return PopScope(
@@ -165,10 +177,14 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen>
           stream: stream,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return const Center(
-                child: Text(
-                  'Unable to load orders.',
-                  style: TextStyle(color: Colors.white),
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _friendlyError(snapshot.error!),
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               );
             }
@@ -179,7 +195,14 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen>
               );
             }
 
-            final docs = snapshot.data?.docs ?? [];
+            final docs = (snapshot.data?.docs ?? []).toList()
+              ..sort((a, b) {
+                final aTs = a.data()['createdAt'] as Timestamp?;
+                final bTs = b.data()['createdAt'] as Timestamp?;
+                final aMs = aTs?.millisecondsSinceEpoch ?? 0;
+                final bMs = bTs?.millisecondsSinceEpoch ?? 0;
+                return bMs.compareTo(aMs);
+              });
 
             return TabBarView(
               controller: _tabController,

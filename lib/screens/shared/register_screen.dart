@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -90,20 +91,21 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     setState(() => _isLoading = true);
     try {
-      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _customerEmailController.text.trim(),
-        password: _customerPasswordController.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _customerEmailController.text.trim(),
+            password: _customerPasswordController.text.trim(),
+          );
 
       await FirebaseFirestore.instance
           .collection('users')
           .doc(credential.user!.uid)
           .set({
-        'fullName': _customerNameController.text.trim(),
-        'email': _customerEmailController.text.trim(),
-        'role': 'customer',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+            'fullName': _customerNameController.text.trim(),
+            'email': _customerEmailController.text.trim(),
+            'role': 'customer',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
 
       if (!mounted) return;
       context.go('/home');
@@ -129,25 +131,48 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     setState(() => _isLoading = true);
     try {
-      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _vendorEmailController.text.trim(),
-        password: _vendorPasswordController.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _vendorEmailController.text.trim(),
+            password: _vendorPasswordController.text.trim(),
+          );
+
+      GeoPoint location = const GeoPoint(13.0827, 80.2707);
+      try {
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+
+          if (permission != LocationPermission.denied &&
+              permission != LocationPermission.deniedForever) {
+            final pos = await Geolocator.getCurrentPosition(
+              timeLimit: const Duration(seconds: 6),
+            );
+            location = GeoPoint(pos.latitude, pos.longitude);
+          }
+        }
+      } catch (_) {
+        // Keep fallback location if current location cannot be resolved.
+      }
 
       await FirebaseFirestore.instance
           .collection('vendors')
           .doc(credential.user!.uid)
           .set({
-        'businessName': _businessNameController.text.trim(),
-        'ownerName': _ownerNameController.text.trim(),
-        'email': _vendorEmailController.text.trim(),
-        'cuisineType': _selectedCuisine,
-        'role': 'vendor',
-        'isApproved': false,
-        'isLive': false,
-        'rating': 4.6,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+            'businessName': _businessNameController.text.trim(),
+            'ownerName': _ownerNameController.text.trim(),
+            'email': _vendorEmailController.text.trim(),
+            'cuisineType': _selectedCuisine,
+            'role': 'vendor',
+            'isApproved': false,
+            'isLive': false,
+            'rating': 4.6,
+            'location': location,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
 
       if (!mounted) return;
       context.go('/vendor-home');
@@ -170,10 +195,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      _buildCustomerForm(),
-      _buildVendorForm(),
-    ];
+    final tabs = [_buildCustomerForm(), _buildVendorForm()];
 
     return Scaffold(
       backgroundColor: _bg,
@@ -221,10 +243,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               const SizedBox(height: 18),
               SizedBox(
                 height: 520,
-                child: TabBarView(
-                  controller: _tabController,
-                  children: tabs,
-                ),
+                child: TabBarView(controller: _tabController, children: tabs),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -233,9 +252,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    gradient: const LinearGradient(
-                      colors: [_primary, _accent],
-                    ),
+                    gradient: const LinearGradient(colors: [_primary, _accent]),
                   ),
                   child: ElevatedButton(
                     onPressed: _isLoading
@@ -286,7 +303,10 @@ class _RegisterScreenState extends State<RegisterScreen>
                     onPressed: () => context.go('/login'),
                     child: const Text(
                       'Login',
-                      style: TextStyle(color: _accent, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: _accent,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -306,7 +326,10 @@ class _RegisterScreenState extends State<RegisterScreen>
           TextFormField(
             controller: _customerNameController,
             style: const TextStyle(color: Colors.white),
-            decoration: _fieldDecoration(hint: 'Full Name', icon: Icons.person_outline),
+            decoration: _fieldDecoration(
+              hint: 'Full Name',
+              icon: Icons.person_outline,
+            ),
             validator: (value) => (value == null || value.trim().isEmpty)
                 ? 'Full name is required'
                 : null,
@@ -316,7 +339,10 @@ class _RegisterScreenState extends State<RegisterScreen>
             controller: _customerEmailController,
             style: const TextStyle(color: Colors.white),
             keyboardType: TextInputType.emailAddress,
-            decoration: _fieldDecoration(hint: 'Email', icon: Icons.email_outlined),
+            decoration: _fieldDecoration(
+              hint: 'Email',
+              icon: Icons.email_outlined,
+            ),
             validator: (value) {
               final text = value?.trim() ?? '';
               if (text.isEmpty) return 'Email is required';
@@ -335,7 +361,8 @@ class _RegisterScreenState extends State<RegisterScreen>
               hint: 'Password',
               icon: Icons.lock_outline,
               suffix: IconButton(
-                onPressed: () => setState(() => _customerObscure = !_customerObscure),
+                onPressed: () =>
+                    setState(() => _customerObscure = !_customerObscure),
                 icon: Icon(
                   _customerObscure
                       ? Icons.visibility_off_outlined
@@ -346,7 +373,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             validator: (value) {
               if ((value ?? '').isEmpty) return 'Password is required';
-              if ((value ?? '').length < 6) return 'Minimum 6 characters required';
+              if ((value ?? '').length < 6)
+                return 'Minimum 6 characters required';
               return null;
             },
           ),
@@ -392,7 +420,10 @@ class _RegisterScreenState extends State<RegisterScreen>
           TextFormField(
             controller: _ownerNameController,
             style: const TextStyle(color: Colors.white),
-            decoration: _fieldDecoration(hint: 'Owner Name', icon: Icons.person_outline),
+            decoration: _fieldDecoration(
+              hint: 'Owner Name',
+              icon: Icons.person_outline,
+            ),
             validator: (value) => (value == null || value.trim().isEmpty)
                 ? 'Owner name is required'
                 : null,
@@ -402,7 +433,10 @@ class _RegisterScreenState extends State<RegisterScreen>
             controller: _vendorEmailController,
             style: const TextStyle(color: Colors.white),
             keyboardType: TextInputType.emailAddress,
-            decoration: _fieldDecoration(hint: 'Email', icon: Icons.email_outlined),
+            decoration: _fieldDecoration(
+              hint: 'Email',
+              icon: Icons.email_outlined,
+            ),
             validator: (value) {
               final text = value?.trim() ?? '';
               if (text.isEmpty) return 'Email is required';
@@ -421,7 +455,8 @@ class _RegisterScreenState extends State<RegisterScreen>
               hint: 'Password',
               icon: Icons.lock_outline,
               suffix: IconButton(
-                onPressed: () => setState(() => _vendorObscure = !_vendorObscure),
+                onPressed: () =>
+                    setState(() => _vendorObscure = !_vendorObscure),
                 icon: Icon(
                   _vendorObscure
                       ? Icons.visibility_off_outlined
@@ -432,7 +467,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             validator: (value) {
               if ((value ?? '').isEmpty) return 'Password is required';
-              if ((value ?? '').length < 6) return 'Minimum 6 characters required';
+              if ((value ?? '').length < 6)
+                return 'Minimum 6 characters required';
               return null;
             },
           ),

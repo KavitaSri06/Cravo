@@ -1,12 +1,12 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cravo/screens/customer/customer_orders_tab.dart';
+import 'package:cravo/screens/customer/customer_profile_tab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-
-import 'customer_orders_tab.dart';
-import 'customer_profile_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,86 +16,16 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedTab = 0;
-
-  void _openTruck(String vendorId) {
-    context.push('/truck-detail/$vendorId');
-  }
-
-  void _openOrder(String orderId) {
-    context.push('/order-status/$orderId');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _selectedTab == 0,
-      onPopInvoked: (didPop) {
-        if (!didPop && _selectedTab != 0) {
-          setState(() => _selectedTab = 0);
-        }
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF0A0F1E),
-        body: IndexedStack(
-          index: _selectedTab,
-          children: [
-            _CustomerHomeMapTab(onOpenTruck: _openTruck),
-            CustomerOrdersTab(
-              onOpenOrder: _openOrder,
-              onBrowseTrucks: () => setState(() => _selectedTab = 0),
-            ),
-            CustomerProfileTab(
-              onBrowseTrucks: () => setState(() => _selectedTab = 0),
-            ),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _selectedTab,
-          onDestinationSelected: (index) {
-            setState(() => _selectedTab = index);
-          },
-          backgroundColor: const Color(0xFF111827),
-          indicatorColor: const Color(0xFF1A56A0),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.explore_outlined),
-              selectedIcon: Icon(Icons.explore),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
-              label: 'Orders',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomerHomeMapTab extends StatefulWidget {
-  const _CustomerHomeMapTab({required this.onOpenTruck});
-
-  final ValueChanged<String> onOpenTruck;
-
-  @override
-  State<_CustomerHomeMapTab> createState() => _CustomerHomeMapTabState();
-}
-
-class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
-  final TextEditingController _searchController = TextEditingController();
-  final MapController _mapController = MapController();
-
+  int _bottomNavIndex = 0;
   Position? _currentPosition;
   bool _locationReady = false;
+  String? _nearbyVendorId;
+  String? _nearbyVendorName;
+  bool _showProximityBanner = false;
+  bool _proximityUpdateScheduled = false;
   String? _selectedCuisine;
+  final MapController _mapController = MapController();
+  final TextEditingController _searchController = TextEditingController();
 
   static const _bg = Color(0xFF0A0F1E);
   static const _card = Color(0xFF111827);
@@ -120,54 +50,86 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() => _locationReady = true);
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition();
+      final position = await Geolocator.getCurrentPosition(
+        timeLimit: const Duration(seconds: 6),
+      );
       if (!mounted) return;
-
       setState(() {
         _currentPosition = position;
         _locationReady = true;
       });
-    } catch (_) {}
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _locationReady = true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _locationReady = true);
+    }
   }
 
   Future<void> _recenterToUser() async {
-    if (_currentPosition == null) {
-      await _prepareLocation();
-    }
-
+    if (_currentPosition == null) await _prepareLocation();
     final current = _currentPosition;
     if (current == null) return;
-
     _mapController.move(LatLng(current.latitude, current.longitude), 15);
   }
 
   String _distanceLabel(GeoPoint? point) {
     final user = _currentPosition;
     if (user == null || point == null) return '--';
-
     final meters = Geolocator.distanceBetween(
       user.latitude,
       user.longitude,
       point.latitude,
       point.longitude,
     );
+    return meters < 1000
+        ? '${meters.toStringAsFixed(0)} m'
+        : '${(meters / 1000).toStringAsFixed(1)} km';
+  }
 
-    if (meters < 1000) {
-      return '${meters.toStringAsFixed(0)} m';
+  void _checkProximity(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    if (_currentPosition == null ||
+        _showProximityBanner ||
+        _proximityUpdateScheduled) {
+      return;
     }
 
-    return '${(meters / 1000).toStringAsFixed(1)} km';
+    for (final doc in docs) {
+      final data = doc.data();
+      final location = data['location'] as GeoPoint?;
+      if (location == null) continue;
+      final distance = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        location.latitude,
+        location.longitude,
+      );
+      if (distance < 1000) {
+        _proximityUpdateScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _nearbyVendorId = doc.id;
+            _nearbyVendorName = data['businessName'] ?? 'A food truck';
+            _showProximityBanner = true;
+            _proximityUpdateScheduled = false;
+          });
+        });
+        return;
+      }
+    }
   }
 
   Future<void> _openFilterSheet(List<String> cuisines) async {
     String? tempCuisine = _selectedCuisine;
-
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: _card,
@@ -215,11 +177,9 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                           labelStyle: TextStyle(
                             color: selected ? Colors.white : _subtle,
                           ),
-                          onSelected: (_) {
-                            setModalState(() {
-                              tempCuisine = selected ? null : cuisine;
-                            });
-                          },
+                          onSelected: (_) => setModalState(
+                            () => tempCuisine = selected ? null : cuisine,
+                          ),
                         );
                       }),
                     ],
@@ -253,50 +213,98 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      body: IndexedStack(
+        index: _bottomNavIndex,
+        children: [
+          _buildMapPage(),
+          CustomerOrdersTab(
+            onOpenOrder: (orderId) => context.go('/order-status/$orderId'),
+            onBrowseTrucks: () => setState(() => _bottomNavIndex = 0),
+          ),
+          CustomerProfileTab(
+            onBrowseTrucks: () => setState(() => _bottomNavIndex = 0),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _bottomNavIndex,
+        onDestinationSelected: (index) =>
+            setState(() => _bottomNavIndex = index),
+        backgroundColor: _card,
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.map), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.receipt), label: 'Orders'),
+          NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMapPage() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('vendors')
           .where('isLive', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Unable to load live trucks right now.',
+              style: TextStyle(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF4DA3FF)),
+          );
+        }
+
         final allDocs = snapshot.data?.docs ?? [];
+
         final cuisines =
             allDocs
                 .map((doc) => (doc.data()['cuisineType'] ?? '').toString())
-                .where((value) => value.isNotEmpty)
+                .where((v) => v.isNotEmpty)
                 .toSet()
                 .toList()
               ..sort();
+
+        if (allDocs.isNotEmpty) _checkProximity(allDocs);
 
         final search = _searchController.text.trim().toLowerCase();
         final filteredDocs = allDocs.where((doc) {
           final data = doc.data();
           final loc = data['location'];
           if (loc is! GeoPoint) return false;
-
           final name = (data['businessName'] ?? '').toString().toLowerCase();
           final cuisine = (data['cuisineType'] ?? '').toString();
-
           final matchesSearch =
               search.isEmpty ||
               name.contains(search) ||
               cuisine.toLowerCase().contains(search);
           final matchesCuisine =
               _selectedCuisine == null || cuisine == _selectedCuisine;
-
           return matchesSearch && matchesCuisine;
         }).toList();
+
+        final liveWithoutLocation = allDocs
+            .where((doc) => doc.data()['location'] is! GeoPoint)
+            .length;
 
         final markers = filteredDocs.map((doc) {
           final data = doc.data();
           final location = data['location'] as GeoPoint;
-
           return Marker(
             point: LatLng(location.latitude, location.longitude),
             width: 44,
             height: 44,
             child: GestureDetector(
-              onTap: () => widget.onOpenTruck(doc.id),
+              onTap: () => context.go('/truck-detail/${doc.id}'),
               child: Container(
                 decoration: const BoxDecoration(
                   color: Color(0xFF111827),
@@ -313,7 +321,7 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
         }).toList();
 
         final center = _currentPosition == null
-            ? LatLng(13.0827, 80.2707)
+            ? const LatLng(13.0827, 80.2707)
             : LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
 
         return Stack(
@@ -332,6 +340,8 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                 MarkerLayer(markers: markers),
               ],
             ),
+
+            // Search bar
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -384,6 +394,51 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                 ),
               ),
             ),
+
+            // Proximity banner
+            if (_showProximityBanner)
+              Positioned(
+                top: 110,
+                left: 15,
+                right: 15,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 15,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            if (_nearbyVendorId != null) {
+                              context.go('/truck-detail/$_nearbyVendorId');
+                            }
+                          },
+                          child: Text(
+                            '🚚 $_nearbyVendorName is near you! Tap to order',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () =>
+                            setState(() => _showProximityBanner = false),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Bottom truck list
             DraggableScrollableSheet(
               minChildSize: 0.17,
               initialChildSize: 0.25,
@@ -436,6 +491,16 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                           ),
                         ],
                       ),
+                      if (liveWithoutLocation > 0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '$liveWithoutLocation live truck(s) missing location update',
+                          style: const TextStyle(
+                            color: Colors.orange,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       if (filteredDocs.isEmpty)
                         Container(
@@ -445,7 +510,7 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: const Text(
-                            'No matching trucks nearby. Try adjusting filters.',
+                            'No matching trucks nearby.',
                             style: TextStyle(color: _subtle),
                           ),
                         )
@@ -455,7 +520,7 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: filteredDocs.length,
-                            separatorBuilder: (context, index) =>
+                            separatorBuilder: (_, __) =>
                                 const SizedBox(width: 10),
                             itemBuilder: (context, index) {
                               final doc = filteredDocs[index];
@@ -471,7 +536,8 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                               final location = data['location'] as GeoPoint?;
 
                               return GestureDetector(
-                                onTap: () => widget.onOpenTruck(doc.id),
+                                onTap: () =>
+                                    context.go('/truck-detail/${doc.id}'),
                                 child: Container(
                                   width: 250,
                                   padding: const EdgeInsets.all(14),
@@ -568,6 +634,8 @@ class _CustomerHomeMapTabState extends State<_CustomerHomeMapTab> {
                 );
               },
             ),
+
+            // My location FAB
             Positioned(
               right: 16,
               bottom: 190,

@@ -1,1 +1,28 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"carvo-eb283","appId":"1:442036078735:android:88bbd03d7a6559414148fa","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"carvo-eb283","configurations":{"android":"1:442036078735:android:88bbd03d7a6559414148fa","ios":"1:442036078735:ios:186c606ec8add1854148fa","macos":"1:442036078735:ios:186c606ec8add1854148fa","web":"1:442036078735:web:d0b80c1610fe16ab4148fa","windows":"1:442036078735:web:5011246bcd8a36e94148fa"}}}}}}
+{
+	"flutter": {
+		"platforms": {
+			"android": {
+				"default": {
+					"projectId": "carvo-eb283",
+					"appId": "1:442036078735:android:88bbd03d7a6559414148fa",
+					"fileOutput": "android/app/google-services.json"
+				}
+			},
+			"dart": {
+				"lib/firebase_options.dart": {
+					"projectId": "carvo-eb283",
+					"configurations": {
+						"android": "1:442036078735:android:88bbd03d7a6559414148fa",
+						"ios": "1:442036078735:ios:186c606ec8add1854148fa",
+						"macos": "1:442036078735:ios:186c606ec8add1854148fa",
+						"web": "1:442036078735:web:d0b80c1610fe16ab4148fa",
+						"windows": "1:442036078735:web:5011246bcd8a36e94148fa"
+					}
+				}
+			}
+		}
+	},
+	"firestore": {
+		"rules": "firestore.rules"
+	}
+}
