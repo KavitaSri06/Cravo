@@ -1,7 +1,4 @@
-# 🧠 Cravo - Food Truck Discovery App
-
-[![Flutter](https://flutter.dev/images/logo.png)](https://flutter.dev/) [![Firebase](https://firebase.google.com/downloads/brand-guidelines/SVG/logo-logomark.svg)](https://firebase.google.com/)
-
+# Cravo - Food Truck Discovery App
 Cravo is a startup-style **food truck discovery and ordering app** (similar to Swiggy/Zomato but specialized for food trucks). Built with Flutter + Firebase, it enables **customers to discover nearby food trucks on a map** and **vendors to go live and receive orders** with real-time interaction.
 
 ## 🚀 Features Implemented So Far (MVP Progress)
@@ -155,12 +152,6 @@ flutter run
 | **v1.0** | Menu system, full order flow, FCM notifications |
 | **v1.1** | Live truck tracking, ratings/reviews |
 | **v2.0** | Admin panel, analytics, payments |
-
-## 👩‍💻 Authors & Contributors
-
-- **Lead Developer**: [Your Name]
-- **Design**: Food truck UI/UX team
-- **Contributors**: Open source community
 
 ## 📄 License
 
