@@ -1,163 +1,192 @@
-# Cravo - Food Truck Discovery App
-Cravo is a startup-style **food truck discovery and ordering app** (similar to Swiggy/Zomato but specialized for food trucks). Built with Flutter + Firebase, it enables **customers to discover nearby food trucks on a map** and **vendors to go live and receive orders** with real-time interaction.
+# Cravo
 
-## 🚀 Features Implemented So Far (MVP Progress)
+Cravo is a Flutter and Firebase food-truck discovery and ordering platform with separate customer and vendor experiences. This repository contains the final MVP baseline with role-based authentication, live truck discovery, vendor go-live broadcasting, menu management, and real-time order flows.
 
-### Customer Features
-- 🔍 **Map-based food truck discovery** using `flutter_map` (OpenStreetMap)
-- 🏠 **Bottom navigation**: Home (map), Orders, Profile
-- 📱 **Truck detail screen** with vendor info
-- 🛒 **Order placement flow** (basic)
-- 🌙 **Dark themed modern UI**
+## MVP Summary
 
-### Vendor Features
-- ✅ **Go Live / Go Offline toggle**
-- 📍 **Real-time location updates** via Geolocator
-- 📊 **Vendor dashboard UI** (home, orders)
-- 🍽️ **Vendor menu screen** (UI ready)
+The project is production-oriented at MVP level and includes:
 
-### Backend Integration
-- 👤 **Firebase Authentication** (Email/Password + role-based: Customer/Vendor)
-- 🔥 **Firestore** for vendors, orders data
-- 🔄 Real-time sync for live status and location
+- Customer app flow: discover live trucks on map, open truck details, place order, track order status.
+- Vendor app flow: go live/offline, broadcast location, manage menu items, review and update incoming orders.
+- Shared flow: registration, login, role-based routing, Firestore-backed real-time updates.
 
-## 🏗️ Tech Stack
+## Core Features
 
-| Category | Technologies |
-|----------|--------------|
-| **Frontend** | Flutter |
-| **Backend** | Firebase (Auth, Firestore, Storage, Messaging) |
-| **Maps & Location** | flutter_map, latlong2, geolocator, geocoding |
-| **State Management** | Riverpod |
-| **Navigation** | GoRouter |
-| **UI/UX** | Material Design, Lottie, Shimmer, fl_chart |
-| **Utilities** | cached_network_image, image_picker, uuid, intl |
+### Customer
 
-## 📂 Project Structure
+- Live truck map using OpenStreetMap via flutter_map.
+- Search and cuisine filtering.
+- Proximity banner for nearby live vendors.
+- Truck detail page with menu and info tabs.
+- Cart-based order placement.
+- Orders tab with latest-first listing.
+- Profile tab.
 
-```
-lib/
-├── app/              # App-wide config (router.dart)
-├── models/           # Data models (Vendor, Order, etc.)
-├── providers/        # Riverpod state providers
-├── screens/          # All screens
-│   ├── customer/     # Customer screens (home, orders, profile, truck_detail)
-│   ├── vendor/       # Vendor screens (home, orders, menu)
-│   ├── admin/        # Admin panel (TBD)
-│   └── shared/       # Shared screens (login, register, splash)
-├── services/         # Services (auth_role_service.dart, firebase)
-└── widgets/          # Reusable widgets
-└── main.dart         # App entry point
-```
+### Vendor
 
-## ⚙️ Setup Instructions
+- Live status toggle with periodic location broadcast.
+- Vendor dashboard with today stats and recent orders.
+- Vendor orders board (tabbed statuses).
+- Vendor menu CRUD.
+- Vendor profile tab.
 
-### 1. Clone & Install
+### Platform and Backend
+
+- Firebase Authentication.
+- Cloud Firestore data model for users, vendors, menus, and orders.
+- Firestore security rules included and deploy-ready.
+- Route protection and role isolation through GoRouter.
+
+## Tech Stack
+
+- Flutter (Material 3)
+- Dart SDK 3.11+
+- Firebase Core, Auth, Firestore, Storage, Messaging
+- GoRouter
+- flutter_map, latlong2, geolocator, geocoding
+- flutter_riverpod
+- intl, shared_preferences, connectivity_plus
+
+## Architecture Overview
+
+- Entry point: lib/main.dart
+- Routing and role redirects: lib/app/router.dart
+- Customer screens: lib/screens/customer
+- Vendor screens: lib/screens/vendor
+- Shared auth/splash screens: lib/screens/shared
+- Role resolution service: lib/services/auth_role_service.dart
+
+## Current Route Map
+
+Public:
+
+- /
+- /login
+- /register
+
+Customer:
+
+- /home
+- /truck-detail/:vendorId
+- /order-status/:orderId
+
+Vendor:
+
+- /vendor-home
+- /vendor-orders
+- /vendor-menu
+- /vendor-profile
+
+## Firestore Data Model (MVP)
+
+### users/{userId}
+
+- Stores customer profile and role-linked user data.
+
+### vendors/{vendorId}
+
+- Core vendor profile.
+- Live state and current GeoPoint location.
+- Operational metadata such as locationUpdatedAt.
+
+### menus/{vendorId}/items/{itemId}
+
+- Vendor menu items.
+- Availability controls and pricing fields.
+
+### orders/{orderId}
+
+- customerId, vendorId, customerName, vendorName
+- items list with quantity and line totals
+- totalAmount
+- status lifecycle fields
+- createdAt, updatedAt, placedAt timestamps
+
+## Security
+
+- Firestore rules are defined in firestore.rules.
+- Firebase configuration includes Firestore rules mapping in firebase.json.
+- Authorization intent:
+  - Users can read/write only their own user documents.
+  - Vendors can write only their own vendor and menu data.
+  - Customers can create and read their own orders.
+  - Vendors can read and update orders assigned to them.
+
+## Setup
+
+### Prerequisites
+
+- Flutter SDK installed and available on PATH.
+- Android Studio or Xcode toolchain for target platform.
+- Firebase CLI installed for rules deployment.
+- A Firebase project with Auth and Firestore enabled.
+
+### Installation
+
+1. Clone repository.
+2. Install dependencies.
+
 ```bash
-git clone <your-repo-url>
-cd cravo
 flutter pub get
 ```
 
-### 2. Firebase Setup
-1. Create a [Firebase project](https://console.firebase.google.com/)
-2. Enable **Authentication** → Email/Password
-3. Enable **Firestore Database**
-4. Add Android app → Download `google-services.json` to `android/app/`
-5. (iOS) Add iOS app → Download `GoogleService-Info.plist`
+### Firebase Configuration
 
-### 3. Run the App
+1. Configure Firebase for each target platform.
+2. Ensure generated options exist at lib/firebase_options.dart.
+3. Confirm android/app/google-services.json is present for Android builds.
+4. Deploy security rules when updated:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+## Running the App
+
 ```bash
 flutter run
 ```
 
-**Pro Tip**: Use physical device for location testing!
+For emulator-specific launch:
 
-## 🔥 Firestore Collections (Current Structure)
-
-### `vendors/{vendorId}`
-```json
-{
-  "isLive": true,
-  "location": { "latitude": 12.97, "longitude": 77.59 },  // GeoPoint
-  "isApproved": true,
-  "businessName": "Street Eats",
-  "ownerName": "John Doe"
-}
+```bash
+flutter devices
+flutter run -d <device-id>
 ```
 
-### `orders/{orderId}`
-```json
-{
-  "customerId": "user123",
-  "vendorId": "vendor456",
-  "items": ["Burger x2", "Fries x1"],
-  "totalAmount": 250,
-  "status": "pending",
-  "createdAt": "2024-01-15T10:30:00Z"
-}
+## Testing and Quality
+
+Run tests:
+
+```bash
+flutter test
 ```
 
-### Planned: `menus/{vendorId}/{itemId}`
-```json
-{
-  "name": "Classic Burger",
-  "price": 150,
-  "imageUrl": "...",
-  "available": true
-}
+Recommended local checks before commit:
+
+```bash
+flutter analyze
+flutter test
 ```
 
-## 🧪 Current Status
+## MVP Completion Scope
 
-✅ **Working**:
-- Vendor LIVE status + location updates to Firestore
-- Role-based auth (Customer/Vendor)
-- Customer map discovery UI
-- Vendor dashboard (home/orders)
-- Basic order flow UI
+This repository currently represents the completed MVP baseline for:
 
-⏳ **In Progress**:
-- End-to-end order processing
-- Vendor menu integration
+- Role-based customer and vendor app flows.
+- Live location-based discovery.
+- Vendor go-live broadcasting.
+- Menu and order management essentials.
+- Secure Firestore access model.
 
-## ⚠️ Known Issues / Pending Work
+## Next Release Candidates
 
-- [ ] Vendor menu system (add/edit items)
-- [ ] Complete order lifecycle (accept/reject/ready)
-- [ ] Map filtering (approved vendors only)
-- [ ] Real-time order notifications (FCM)
-- [ ] Payment integration (Razorpay/Stripe)
+- Push notifications for order events.
+- Payment integration.
+- Enhanced analytics for vendors.
+- Admin tooling and moderation workflows.
 
-## 🤝 Contribution Guide
+## License
 
-1. **Fork & Clone** → Create feature branch: `feat/your-feature`
-2. **Follow structure** - don't break navigation or auth flow
-3. **Test locally** → `flutter test` + manual testing
-4. **Commit cleanly**:
-   ```bash
-   git commit -m "feat: add vendor menu CRUD"
-   ```
-5. **PR to `main`** - include screenshots/demo
-
-**Coding Standards**:
-- Use Riverpod for all state
-- Type-safe models (freezed/json_serializable)
-- Consistent dark theme
-
-## 📌 Future Roadmap
-
-| Phase | Features |
-|-------|----------|
-| **v1.0** | Menu system, full order flow, FCM notifications |
-| **v1.1** | Live truck tracking, ratings/reviews |
-| **v2.0** | Admin panel, analytics, payments |
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file.
-
----
-
-⭐ **Star us on GitHub** | 🐛 **Found a bug?** Open an issue | 💬 **Questions?** Discussions welcome!
+This project is private/internal unless a LICENSE file is added and published.
 
